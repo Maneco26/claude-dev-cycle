@@ -1,0 +1,15 @@
+{
+  "name": "claude-dev-cycle",
+  "displayName": "Claude Dev Cycle",
+  "description": "Token-saving development workflow for Claude Code: Opus plans, Sonnet executes, Opus audits. Save ~70% in API costs without sacrificing quality.",
+  "owner": "Maneco26",
+  "repository": "https://github.com/Maneco26/claude-dev-cycle",
+  "version": "1.0.0",
+  "license": "MIT",
+  "plugins": [
+    {
+      "name": "dev-cycle",
+      "source": "./plugins/dev-cycle"
+    }
+  ]
+}

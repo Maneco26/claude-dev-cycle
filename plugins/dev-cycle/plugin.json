@@ -1,0 +1,28 @@
+{
+  "name": "dev-cycle",
+  "displayName": "Dev Cycle",
+  "description": "Autonomous development workflow: Opus plans, Sonnet executes, Opus audits in a loop until done. Cuts API costs by ~70% vs Opus-only while keeping quality.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Maneco26",
+    "url": "https://github.com/Maneco26"
+  },
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "autonomous",
+    "cost-optimization",
+    "opus",
+    "sonnet",
+    "sub-agents",
+    "claude-mem",
+    "goal",
+    "delegation"
+  ],
+  "skills": [
+    {
+      "name": "dev-cycle",
+      "path": "./skills/dev-cycle/SKILL.md"
+    }
+  ]
+}
