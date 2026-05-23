@@ -1,378 +1,405 @@
 ---
 name: dev-cycle
-description: Workflow autónomo Opus-Sonnet-loop para Claude Code. Opus planifica + audita, Sonnet ejecuta. Aprendizaje persistente entre sesiones (lessons-learned). Reporte de ahorro de tokens al final. Ahorra ~70% en API vs Opus solo, manteniendo calidad.
+description: Workflow autónomo Opus-Sonnet-loop para Claude Code, integrado con técnica Telegraphic Mode (caveman) y Self-evaluation loop. Opus planifica + audita, Sonnet ejecuta en estilo telegráfico. Aprendizaje persistente entre sesiones. Loop autónomo hasta cumplir condición. Reporte de tokens al final. Ahorra ~80-85% vs Opus solo manteniendo calidad.
 trigger: /dev-cycle
 ---
 
-# /dev-cycle — Ciclo de desarrollo Opus + Sonnet
+# /dev-cycle v2.0 — Triple stack: Cycle + Telegraphic + Self-evaluation
 
-> **ES** primero, **EN** después en este mismo archivo.
-> Bilingual skill: Spanish first, English below.
+> Bilingual skill. **ES** primero, **EN** después.
+> 3 técnicas combinadas en una sola skill: ~80-85% de ahorro vs Opus solo.
 
 ---
 
 # 🇪🇸 Español
 
-## Qué hace esta skill
+## Qué hace esta skill (3-en-1)
 
-Patrón refinado en proyectos reales: **Opus planifica + audita, Sonnet ejecuta en paralelo**.
+### Capa 1 — Cycle (Opus plan + Sonnet ejecuta + Opus audita)
 
-Resultado típico: **~70% de ahorro en tokens** sin perder calidad, gracias a usar Sonnet 4.6 (5× más barato) para la ejecución de specs claras y reservar Opus solo para arquitectura + auditoría.
+Opus lee contexto, planifica, delega a Sonnet 4.6 (5× más barato). Sonnet ejecuta el spec en paralelo. Opus audita y loop hasta calidad aprobada.
+**Ahorro base: ~70% en tokens.**
 
-Además:
+### Capa 2 — Telegraphic Mode (técnica caveman)
 
-- **Memoria de errores persistente**: cada error que Opus le encuentra a Sonnet se documenta en `<repo>/.claude/dev-cycle-lessons.md`. Al inicio del próximo ciclo, esas lecciones se inyectan al spec para que Sonnet NO repita el mismo error.
-- **Reporte de costos al final**: cada ciclo termina con un resumen mostrando tokens reales vs estimación si hubiera sido todo Opus.
+Sub-agents Sonnet responden en estilo telegráfico: sin filler words, sin pleasantries, sin frases de conexión. Código + paths + URLs intactos.
+**Ahorro adicional: ~10-15% en output de Sonnet.**
+
+Crédito: técnica original de Julius Brussee ([github.com/juliusbrussee/caveman](https://github.com/juliusbrussee/caveman), MIT). Re-implementada e integrada acá con atribución (ver NOTICE.md).
+
+### Capa 3 — Self-evaluation loop (replica /goal sin depender del CLI)
+
+Después de cada audit, Opus auto-evalúa "¿se cumple la condición de éxito?". Si no, sigue solo hasta cumplirla. Si el usuario tiene `/goal` nativo de Claude Code, es complementario.
+
+**Ahorro total combinado: ~80-85% vs Opus puro.**
 
 ## Cuándo usar
 
-Trigger explícito: el usuario escribe `/dev-cycle <descripción de la tarea>`.
+Trigger explícito: `/dev-cycle <descripción de tarea>`. Buenos casos:
+- Implementar feature nueva.
+- Arreglar bugs del backlog.
+- Refactor de área.
+- Completar TODOs.
 
-Buenos casos:
-- Implementar un módulo o feature nuevo.
-- Arreglar bugs de un backlog (Linear, GitHub Issues, etc.).
-- Refactorizar un área del código.
-- Completar TODOs pendientes.
-- Cualquier tarea de desarrollo que cruce backend + UI.
-
-## Cuándo NO usar
-
-- Cambios triviales (1-2 líneas). Hacelo directo.
-- Preguntas/explicaciones/discusiones de estrategia.
-- Tareas ya en curso que solo necesitan continuación.
+Cuándo NO: cambios triviales, preguntas, tareas en curso que solo necesitan continuación.
 
 ## Prerequisites
 
-- **Claude Code 2.1.139+** (`/goal` y plugin marketplace).
-- **Acceso a Opus + Sonnet** (Claude Pro/Team/Max o Anthropic API).
-- **claude-mem** instalado globalmente — recomendado pero opcional. Sin él la skill funciona, solo con menos contexto histórico cross-session. Instalación: `npm install -g claude-mem`.
-- El proyecto debe tener `CLAUDE.md` describiendo sus convenciones (la skill las respeta).
+- Claude Code 2.1.139+ (`/goal` y plugin marketplace).
+- Acceso API a Opus + Sonnet.
+- `CLAUDE.md` en el proyecto con sus convenciones.
+- Recomendado: `npm install -g claude-mem` para memoria cross-session.
 
 ## El ciclo paso a paso
 
-Cuando se invoca `/dev-cycle <tarea>`, ejecutar EN ORDEN:
+### Paso 0 — Refresh de lecciones aprendidas
 
-### Paso 0 — Refresh de lecciones aprendidas (NUEVO en v1.1)
+Leer `<repo>/.claude/dev-cycle-lessons.md` si existe. Si `claude-mem` está instalado, también buscar observaciones `obs_type: change` con query "lesson sonnet mistake".
 
-**ANTES de planificar**, leer dos fuentes:
-
-1. **Lecciones específicas del proyecto**: archivo `<repo-root>/.claude/dev-cycle-lessons.md` si existe. Contiene errores que Sonnet cometió antes en ESTE repo + cómo evitarlos.
-
-2. **Patrones cross-project**: si `claude-mem` está instalado, invocar `claude-mem:mem-search` con `obs_type: change` y `query: "lesson sonnet mistake"` para traer lecciones de otras sesiones.
-
-Si encontrás lecciones relevantes, **incluilas EXPLÍCITAMENTE en el spec que le pasarás a Sonnet** (sección "Common mistakes to avoid en este proyecto"). Esto es lo que evita re-trabajos.
-
-Si el archivo de lecciones no existe, este paso no falla — simplemente continúa.
+Las lecciones relevantes se inyectan al spec de Sonnet bajo "## Errores conocidos a evitar".
 
 ### Paso 1 — Contexto histórico
 
-Si `claude-mem` está disponible, invocá `claude-mem:mem-search` con keywords de la tarea para detectar:
-- Sesiones paralelas trabajando en algo cercano.
-- Decisiones grabadas que afecten el approach.
-- Módulos/tablas/RPCs similares que se puedan reutilizar.
-
-Si no está disponible, este paso se omite silenciosamente.
+`claude-mem:mem-search` con keywords de la tarea. Detectar sesiones paralelas, decisiones grabadas, módulos reutilizables.
 
 ### Paso 2 — Mapeo de codebase
 
-Antes de planificar:
-- `Grep` de keywords en directorios relevantes.
-- Identificá el módulo existente más cercano (lo usás como patrón).
-- Listá archivos exactos a modificar.
-
-Leé el `CLAUDE.md` del proyecto si no lo leíste. Respetá sus convenciones estrictamente.
+`Grep` keywords, identificar módulo patrón, listar archivos exactos. Leer `CLAUDE.md`.
 
 ### Paso 3 — Plan estructurado con TaskList
 
-Creá tasks con `TaskCreate`:
-- Una task por unidad lógica de trabajo (no por archivo individual).
-- Cada task con descripción detallada: schema, archivos exactos, server actions, pages, verificaciones.
-- Si la tarea es grande (>4h estimadas), dividila en bloques que puedan correr en paralelo.
+Una task por unidad lógica. Detallado: schema, archivos exactos, verificaciones. Si grande (>4h), dividir en bloques paralelos.
 
-### Paso 4 — Delegar a Sonnet sub-agents
+### Paso 4 — Delegar a Sonnet **en Telegraphic Mode**
 
-Lanzá `Agent` con:
-- `subagent_type`: el más apropiado al dominio.
-- **`model: "sonnet"`** SIEMPRE (acá está el ahorro).
-- Prompt MUY explícito con:
-  - Contexto técnico del proyecto (reglas del CLAUDE.md).
-  - Patrones a copiar (referencias a archivos existentes).
-  - Schema completo si aplica.
-  - Lista exacta de archivos a crear/modificar.
-  - **Lecciones aprendidas** del paso 0 (sección "Common mistakes to avoid").
-  - Verificaciones obligatorias al final.
-  - **"NO hagas commits — el coordinador (Opus) los hace al final"**.
-  - **"NO me preguntes nada — sos autónomo"**.
+`Agent` con `model: "sonnet"` SIEMPRE. Prompt explícito con:
+- Contexto técnico del repo.
+- Patrones a copiar.
+- Schema completo si aplica.
+- Lista exacta de archivos.
+- Lecciones aprendidas del paso 0.
+- Verificaciones obligatorias.
+- **NUEVO v2.0**: instrucción de Telegraphic Mode (ver sección dedicada abajo).
 
-Si la tarea se puede paralelizar, lanzá MÚLTIPLES agents en UNA SOLA llamada.
+### Paso 5 — Auditar
 
-### Paso 5 — Auditar el entregable
+Verificaciones automáticas + sample inspection + verificación independiente + anti-patterns.
 
-Cuando el agent reporta, revisar:
+### Paso 6 — Iterar + documentar lecciones
 
-1. Verificaciones automáticas reportadas (typecheck, lint, tests, build).
-2. Calidad del código (sample inspection de 1-2 archivos críticos).
-3. Verificación independiente: correr typecheck/lint/build localmente.
-4. Anti-patterns comunes específicos del proyecto.
-
-### Paso 6 — Iterar + documentar nuevas lecciones (NUEVO en v1.1)
-
-Si la auditoría encontró problemas:
-
-1. Continuar con el mismo agent vía `SendMessage` (retiene contexto, más eficiente).
-2. **CRÍTICO**: cada error que Sonnet cometió debe documentarse en `<repo>/.claude/dev-cycle-lessons.md`. Si el archivo no existe, crealo con el template:
+Continuar con `SendMessage` al mismo agent. Documentar CADA error en `dev-cycle-lessons.md`:
 
 ```markdown
-# Dev Cycle — Lessons Learned
-
-> Auto-mantenido por la skill /dev-cycle. Cada vez que Opus encuentra un error
-> en el deliverable de Sonnet, se documenta acá para que futuras invocaciones
-> de la skill eviten repetirlo.
->
-> Edición manual permitida — el usuario puede agregar lecciones también.
-
-## Lessons
-
-### YYYY-MM-DD [Category]
-**Error:** descripción del error que cometió Sonnet.
-**Fix:** cómo se debería haber hecho.
-**Context:** archivo/módulo donde apareció.
+### YYYY-MM-DD [Categoría]
+**Error:** lo que Sonnet hizo mal.
+**Fix:** cómo se hace.
+**Context:** archivo/módulo.
 ```
 
-Categories sugeridas: `[TypeScript]`, `[Database]`, `[Auth]`, `[RLS]`, `[i18n]`, `[Build]`, `[Migration]`, `[UI]`, `[Performance]`, `[Security]`.
+Categorías: `[TypeScript]`, `[Database]`, `[RLS]`, `[Auth]`, `[Migración]`, `[i18n]`, `[Build]`, `[UI]`, `[Security]`.
 
-3. Repetir auditoría. Loop hasta calidad aprobada.
+### Paso 7 — Self-evaluation loop (NUEVO v2.0)
 
-Si tras 2-3 iteraciones el agent no resuelve, **arreglalo vos (Opus) directamente** y documentá la lección igual.
+Después del audit limpio, Opus debe preguntarse:
 
-### Paso 7 — Commit + push (si es repo git)
+> *"¿Existe una condición de éxito implícita o explícita en esta tarea? ¿Está cumplida?"*
 
-Solo cuando la auditoría está limpia:
+Condiciones típicas según tipo de tarea:
+- Bug fix: typecheck pasa + lint OK + el comportamiento descrito en el issue ya no se reproduce.
+- Feature: typecheck + lint + build + (idealmente) tests pasan + UI rendereable.
+- Refactor: typecheck + lint + build + cero regresiones en comportamiento.
 
-```bash
-git add <archivos específicos, NO -A>
-git commit -m "..." (Conventional Commits)
-git push
-```
+Si la condición NO está cumplida → volver al paso 5 (audit) o paso 4 (delegar fix) sin pedirle al usuario que diga "continuá".
 
-### Paso 8 — Actualizar memoria persistente
+**Cuándo parar el loop**:
+- Condición cumplida → continuar al paso 8.
+- 5 iteraciones sin progreso → escalar al usuario con resumen claro de bloqueo.
+- Error que requiere decisión humana (ambigüedad funcional, conflicto de specs) → escalar.
 
-Si la tarea fue significativa:
-- Update/crear doc en `docs/MEMORY/` o donde el proyecto lo defina.
-- Asegurate que `dev-cycle-lessons.md` esté actualizado con TODOS los errores nuevos.
+Si el usuario invocó `/goal` nativo además, el evaluador externo (Haiku) chequea independientemente. La skill respeta y NO duplica el loop.
 
-### Paso 9 — Reporte final + métricas de costos (NUEVO en v1.1)
+### Paso 8 — Commit + push
 
-Mensaje final al usuario con DOS partes:
+`git add` archivos específicos (no `-A`). Conventional Commits. Push si es repo con remote.
 
-**Parte A — Qué se hizo** (1-3 líneas):
-- Lo entregado.
-- Verificaciones pasadas.
-- Commit hash + push status (si aplica).
-- Pendientes (si los hay).
+### Paso 9 — Actualizar memoria
 
-**Parte B — Costos del ciclo** (tabla obligatoria):
+Lessons file con todos los errores nuevos. Memory doc si aplica.
+
+### Paso 10 — Reporte final de tokens
+
+Tabla obligatoria con **3 layers de ahorro**:
 
 ```
 ### 💰 Resumen de costos del ciclo
 
-| Capa | Tokens (estimado) | Costo USD (estimado) |
+| Capa | Tokens | Costo USD |
 |---|---|---|
-| Opus (planificación + auditoría) | ~XX,XXX | ~$X.XX |
-| Sonnet (Y sub-agents) | ~XXX,XXX | ~$X.XX |
-| **Total real estimado** | **~XXX,XXX** | **~$X.XX** |
-| Si todo hubiera sido Opus (≈2.5×) | ~XXX,XXX | ~$XX.XX |
+| Opus (plan + audit + self-eval) | ~XX,XXX | ~$X.XX |
+| Sonnet (Y sub-agents, telegraphic mode) | ~XXX,XXX | ~$X.XX |
+| **Total real** | **~XXX,XXX** | **~$X.XX** |
+| Si todo Opus normal (≈2.5×) | ~XXX,XXX | ~$XX.XX |
 | **Ahorrado** | **~XXX,XXX** | **~$XX.XX (XX%)** |
 
-Tiempo: XX min · Sub-agents lanzados: X · Iteraciones de audit: X · Lecciones nuevas documentadas: X
+Desglose del ahorro:
+- Delegación Sonnet vs Opus: ~XX% (capa 1)
+- Telegraphic mode en Sonnet: ~XX% (capa 2)
+- Self-evaluation interno vs invocaciones manuales: ~XX% (capa 3)
+
+Tiempo: XX min · Sub-agents: X · Iteraciones audit: X · Self-eval loops: X · Lecciones nuevas: X
 ```
 
-**Cómo estimar tokens (honestamente)**:
+---
 
-- **Tokens de Sonnet**: sumar `total_tokens` de los `<usage>...</usage>` que cada Agent reporta al volver.
-- **Tokens de Opus**: estimación aproximada. Usar la regla `~30k tokens por turn de Opus` (input + output, mix típico 60/40). Si el ciclo tuvo 5 turns de Opus → ~150k tokens.
-- **Costo USD**: aplicar tarifas Anthropic vigentes:
-  - Opus 4.7 (1M context): $15/MTok input + $75/MTok output → ~$39/MTok con mix 60/40.
-  - Sonnet 4.6: $3/MTok input + $15/MTok output → ~$7.80/MTok.
-- **Multiplicador Opus-solo**: usar **2.5×** como factor conservador. Opus solo genera más output por turn y suele requerir más iteraciones de verificación manual.
-- Aclarar "estimado" siempre. No mentir precisión que no tenés.
+## 📢 Telegraphic Mode — Instrucción explícita para sub-agents
 
-## Combinación con `/goal`
-
-Si la tarea tiene una condición de éxito clara y verificable:
+> Esta sección es **CRÍTICA**. Cuando Opus delegue al sub-agent Sonnet en el Paso 4, **DEBE incluir literal esta instrucción dentro del prompt del agent**:
 
 ```
-/dev-cycle implementar módulo X
-/goal módulo X compila, tests pasan, typecheck/lint OK
+## Telegraphic Mode (técnica caveman)
+
+Respondé y reportá en estilo telegráfico para minimizar tokens de output.
+Reglas:
+
+REGLA 1 — Sin filler words ni pleasantries
+NO escribir: "I'll help you", "Let me", "Great, I'll", "Of course",
+"Voy a...", "Te explico...", "Como verás...", "Espero que esto sirva".
+SÍ escribir directo: "Fix X. Done.", "Read Y. Modified Z."
+
+REGLA 2 — Sin frases de conexión
+NO: "Now I will...", "Next, I need to...", "Then I'll proceed to...",
+"Ahora voy a...", "El siguiente paso es..."
+SÍ: usar listas/bullets/comandos secos.
+
+REGLA 3 — Reportes en bullet seco
+NO: "I successfully implemented the feature and verified that..."
+SÍ:
+- Implemented feature X (file:line).
+- Verified typecheck pass.
+- Verified lint pass.
+- Done.
+
+REGLA 4 — Código intacto
+El código generado/modificado NUNCA se comprime. Mantener idiomático,
+con comentarios necesarios, identificadores legibles.
+NO sacrificar legibilidad de código por tokens.
+
+REGLA 5 — Paths, URLs, IDs intactos
+NUNCA abreviar paths, URLs, UUIDs, commit hashes. Copiar literal.
+
+REGLA 6 — Errores reportados completos
+Si hay error o blocker, reportar mensaje completo del error, no resumir.
+
+REGLA 7 — Tablas y estructura mantenidas
+Tablas markdown, listas y headers se mantienen para legibilidad
+estructural. La compresión es de PROSA, no de estructura.
+
+EJEMPLO de output telegráfico correcto:
+
+  ## Resultado
+  - Modified: app/auth/page.tsx, lib/auth.ts.
+  - Migration applied: 20260523120000__add_oauth.sql.
+  - typecheck: pass.
+  - lint: pass (0 errors, 1 pre-existing warning unrelated).
+  - REST test: register_oauth_user(...) → OK, returned UUID.
+  - Blockers: none.
+
+NO escribir prosa decorativa. Si necesitás explicar una decisión técnica
+no obvia, hacelo en 1 oración corta + bullet con contexto.
+
+Crédito de la técnica: Julius Brussee (caveman, MIT).
 ```
 
-El evaluador (Haiku por default) revisa cada turn. La skill sigue trabajando hasta que la condición se cumple.
+Esta instrucción **debe estar pegada literalmente** en el prompt que Opus le pasa al Sonnet en el Paso 4. No es opcional. Sin esta sección, perdemos la capa 2 de ahorro.
 
-## Anti-patterns a evitar
+**¿Aplicar Telegraphic Mode también al output de Opus?**
 
-**NO**:
-- Lanzar Agent Sonnet sin spec detallado → resultado pobre.
-- Saltar el paso 0 (lecciones) → re-cometer errores ya conocidos.
-- Saltar `claude-mem` si está disponible → posible re-trabajo de algo ya hecho en sesión paralela.
-- Hacer commit sin auditar → bugs en producción.
-- Usar `model: "opus"` en sub-agents → anula todo el ahorro.
+Por default: NO. Opus se comunica con el usuario humano y la prosa ayuda a entender. Si el usuario quiere activar Telegraphic Mode en Opus también, debe pedirlo explícitamente con `/dev-cycle --telegraphic <tarea>` o decírselo: "respondeme en modo telegráfico". Entonces Opus aplica las mismas reglas a su comunicación con el usuario.
 
-**SÍ**:
-- Specs explícitos a Sonnet con schema completo + archivos exactos + lecciones.
-- Documentar CADA error de Sonnet en `dev-cycle-lessons.md`. Es lo más valioso del ciclo.
-- Typecheck DESPUÉS de cada bloque grande.
-- Reporte de tokens claro al final.
+---
 
-## Diseño agnóstico de stack
+## Anti-patterns
 
-La skill funciona en cualquier stack porque la metodología es universal:
-- Next.js / React / Vue / Svelte.
-- Node / Python / Go / Rust.
-- Mobile (React Native, Flutter).
-- Con o sin claude-mem.
-- Con o sin agentes custom en `.claude/agents/`.
+NO:
+- Lanzar Sonnet sin Telegraphic Mode instruction → pierde capa 2.
+- Saltar self-eval → tarea incompleta declarada como completa.
+- `model: "opus"` en sub-agents → anula todo el ahorro.
 
-Se respeta lo que el `CLAUDE.md` del proyecto defina. No se imponen patrones — se amplifica lo que el proyecto ya tiene, delegando ejecución eficientemente.
+SÍ:
+- Pegar literal el bloque Telegraphic en prompts de sub-agents.
+- Self-evaluate honestamente. Si no se cumple, seguir.
+- Documentar cada error en lessons.
 
 ---
 
 # 🇬🇧 English
 
-## What this skill does
+## What this skill does (3-in-1)
 
-Pattern refined in real production projects: **Opus plans + audits, Sonnet executes in parallel**.
+### Layer 1 — Cycle (Opus plans + Sonnet executes + Opus audits)
 
-Typical result: **~70% token savings** without losing quality, thanks to using Sonnet 4.6 (5× cheaper) for executing clear specs while reserving Opus only for architecture + audit.
+Opus reads context, plans, delegates to Sonnet 4.6 (5× cheaper). Sonnet executes specs in parallel. Opus audits, loops until quality is approved.
+**Base savings: ~70% in tokens.**
 
-Plus:
+### Layer 2 — Telegraphic Mode (caveman technique)
 
-- **Persistent error memory**: every mistake Opus catches in Sonnet's deliverable is documented in `<repo>/.claude/dev-cycle-lessons.md`. On the next cycle, those lessons are injected into the spec so Sonnet doesn't repeat them.
-- **Cost report at the end**: every cycle finishes with a summary showing real tokens vs estimated all-Opus cost.
+Sonnet sub-agents respond in telegraphic style: no filler words, no pleasantries, no transition phrases. Code + paths + URLs intact.
+**Additional savings: ~10-15% in Sonnet output.**
+
+Credit: original technique by Julius Brussee ([github.com/juliusbrussee/caveman](https://github.com/juliusbrussee/caveman), MIT). Re-implemented and integrated here with attribution (see NOTICE.md).
+
+### Layer 3 — Self-evaluation loop (replicates /goal without CLI dependency)
+
+After each audit, Opus self-asks "is the success condition met?". If not, continues alone until met. If the user has Claude Code's built-in `/goal`, it's complementary.
+
+**Combined total savings: ~80-85% vs raw Opus.**
 
 ## When to use
 
-User explicitly types `/dev-cycle <task description>`.
+Explicit: `/dev-cycle <task description>`. Good for new features, backlog bugs, refactors, TODOs.
 
-Good for: new modules/features, backlog bugs, refactors, TODOs, anything backend + UI.
-
-## When NOT to use
-
-Trivial 1-2 line changes, questions/explanations, ongoing tasks needing only continuation.
+Don't use for: trivial changes, questions, in-progress tasks needing only continuation.
 
 ## Prerequisites
 
-- Claude Code 2.1.139+ (`/goal` and plugin marketplace).
+- Claude Code 2.1.139+.
 - API access to Opus + Sonnet.
-- `claude-mem` globally (recommended, optional): `npm install -g claude-mem`.
-- Project `CLAUDE.md` defining conventions.
+- `CLAUDE.md` in the project.
+- Recommended: `npm install -g claude-mem`.
 
 ## The cycle step by step
 
-### Step 0 — Refresh learned lessons (NEW in v1.1)
+### Step 0 — Refresh learned lessons
 
-Before planning, read:
-
-1. **Project-specific lessons**: `<repo-root>/.claude/dev-cycle-lessons.md` if exists.
-2. **Cross-project patterns**: if `claude-mem` is installed, search for past lessons.
-
-Include relevant lessons explicitly in the spec for Sonnet (section "Common mistakes to avoid in this project"). This is what prevents re-work.
+Read `<repo>/.claude/dev-cycle-lessons.md`. Search claude-mem for past lessons. Inject relevant into Sonnet spec.
 
 ### Step 1 — Historical context
 
-Use `claude-mem:mem-search` to detect parallel sessions, recorded decisions, reusable modules.
+`claude-mem:mem-search` for parallel sessions, decisions, reusable modules.
 
 ### Step 2 — Codebase mapping
 
-`Grep` for keywords, identify closest existing pattern, list exact files. Read project `CLAUDE.md`.
+`Grep`, identify pattern module, list exact files. Read `CLAUDE.md`.
 
 ### Step 3 — Structured plan with TaskList
 
-One task per logical unit, detailed descriptions, parallelizable blocks.
+One task per logical unit, detailed, parallelizable.
 
-### Step 4 — Delegate to Sonnet sub-agents
+### Step 4 — Delegate to Sonnet **in Telegraphic Mode**
 
-`Agent` with `model: "sonnet"` (the savings lever) and very explicit prompt including the lessons from step 0.
+`Agent` with `model: "sonnet"` ALWAYS. Prompt MUST include the Telegraphic Mode instruction block (see dedicated section below).
 
-### Step 5 — Audit the deliverable
+### Step 5 — Audit
 
-Automated checks + sample inspection + independent verification + anti-patterns.
+Automated + sample inspection + independent + anti-patterns.
 
-### Step 6 — Iterate + document new lessons (NEW in v1.1)
+### Step 6 — Iterate + document lessons
 
-Continue same agent with `SendMessage`. **Document EVERY mistake** in `dev-cycle-lessons.md`:
+`SendMessage` to same agent. Document EVERY mistake in `dev-cycle-lessons.md`.
 
-```markdown
-### YYYY-MM-DD [Category]
-**Error:** what Sonnet did wrong.
-**Fix:** how it should have been done.
-**Context:** file/module where it appeared.
-```
+### Step 7 — Self-evaluation loop (NEW v2.0)
 
-### Step 7 — Commit + push
+Opus asks itself: *"Is there a success condition? Is it met?"*
 
-Specific files (not `-A`), Conventional Commits.
+Typical conditions:
+- Bug fix: typecheck + lint + reported behavior no longer reproduces.
+- Feature: typecheck + lint + build + tests + UI renders.
+- Refactor: typecheck + lint + build + zero behavior regressions.
 
-### Step 8 — Update persistent memory
+If NOT met → back to step 5 or step 4 without asking user to say "continue".
 
-Update memory docs + ensure lessons file is current with all new errors.
+Stop the loop on: condition met, 5 iterations no progress, ambiguity needing human input.
 
-### Step 9 — Final report + cost metrics (NEW in v1.1)
+If user invoked native `/goal`, external evaluator (Haiku) runs independently. The skill respects it and doesn't duplicate the loop.
 
-**Part A — What got done** (1-3 lines): deliverables, verifications, commit, pending.
+### Step 8 — Commit + push
 
-**Part B — Cycle costs** (mandatory table):
+Specific files, Conventional Commits.
 
-```
-### 💰 Cycle cost summary
+### Step 9 — Update memory
 
-| Layer | Tokens (estimate) | Cost USD (estimate) |
-|---|---|---|
-| Opus (planning + audit) | ~XX,XXX | ~$X.XX |
-| Sonnet (Y sub-agents) | ~XXX,XXX | ~$X.XX |
-| **Estimated total** | **~XXX,XXX** | **~$X.XX** |
-| If all Opus (≈2.5×) | ~XXX,XXX | ~$XX.XX |
-| **Saved** | **~XXX,XXX** | **~$XX.XX (XX%)** |
+Lessons file + memory docs.
 
-Time: XX min · Sub-agents launched: X · Audit iterations: X · New lessons documented: X
-```
+### Step 10 — Final token report
 
-**How to estimate tokens honestly**:
-- Sonnet tokens: sum `<usage>total_tokens</usage>` from each Agent return.
-- Opus tokens: rough estimate `~30k tokens per Opus turn`. Multiply by turns.
-- USD cost: apply current Anthropic rates.
-  - Opus 4.7 (1M): $15/MTok input + $75/MTok output → ~$39/MTok with 60/40 mix.
-  - Sonnet 4.6: $3/MTok input + $15/MTok output → ~$7.80/MTok.
-- Multiplier for all-Opus: use **2.5×** (Opus generates more output and needs more verification iterations).
-- Always say "estimate". Don't fake precision you don't have.
+Mandatory table with 3 layers of savings (see Spanish section above).
 
-## Combining with `/goal`
+---
+
+## 📢 Telegraphic Mode — Explicit instruction for sub-agents
+
+> **CRITICAL section.** When Opus delegates to Sonnet in Step 4, this block **MUST be pasted literally** inside the agent's prompt:
 
 ```
-/dev-cycle implement module X
-/goal X compiles, tests pass, typecheck/lint clean
+## Telegraphic Mode (caveman technique)
+
+Reply and report in telegraphic style to minimize output tokens.
+
+RULE 1 — No filler words or pleasantries
+DON'T write: "I'll help you", "Let me", "Great, I'll", "Of course"
+DO write directly: "Fix X. Done.", "Read Y. Modified Z."
+
+RULE 2 — No transition phrases
+DON'T: "Now I will...", "Next, I need to...", "Then I'll proceed to..."
+DO: use lists/bullets/commands.
+
+RULE 3 — Dry bullet reports
+DON'T: "I successfully implemented the feature and verified that..."
+DO:
+- Implemented feature X (file:line).
+- Verified typecheck pass.
+- Verified lint pass.
+- Done.
+
+RULE 4 — Code stays intact
+Generated/modified code is NEVER compressed. Idiomatic, with needed
+comments, readable identifiers. DON'T sacrifice code readability for tokens.
+
+RULE 5 — Paths, URLs, IDs intact
+NEVER abbreviate paths, URLs, UUIDs, commit hashes. Copy literal.
+
+RULE 6 — Errors reported in full
+If error/blocker, report full error message, don't summarize.
+
+RULE 7 — Tables and structure preserved
+Markdown tables, lists, headers stay for structural readability. Compression is for PROSE, not structure.
+
+EXAMPLE of correct telegraphic output:
+
+  ## Result
+  - Modified: app/auth/page.tsx, lib/auth.ts.
+  - Migration applied: 20260523120000__add_oauth.sql.
+  - typecheck: pass.
+  - lint: pass (0 errors, 1 pre-existing warning unrelated).
+  - REST test: register_oauth_user(...) → OK, returned UUID.
+  - Blockers: none.
+
+Don't write decorative prose. If a non-obvious technical decision needs
+explanation, do it in 1 short sentence + bullet with context.
+
+Technique credit: Julius Brussee (caveman, MIT).
 ```
 
-Evaluator (Haiku by default) checks each turn. Skill keeps working until met.
+This instruction **must be pasted literally** in the prompt Opus passes to Sonnet in Step 4. Not optional. Without this section, we lose layer 2 of savings.
 
-## Anti-patterns
+**Apply Telegraphic Mode to Opus output too?**
 
-**DON'T**: launch Sonnet without detailed spec; skip step 0 (lessons); commit without audit; use `model: "opus"` on sub-agents.
-
-**DO**: explicit specs with full schema + exact files + lessons; document every mistake in `dev-cycle-lessons.md`; typecheck after each large block; clean token report at the end.
-
-## Stack-agnostic by design
-
-Works on any tech stack. Respects each project's `CLAUDE.md`. Doesn't impose patterns — amplifies what the project already has by delegating efficiently.
+Default: NO. Opus communicates with the human user and prose helps understanding. If the user wants Telegraphic Mode on Opus too, they must explicitly ask: `/dev-cycle --telegraphic <task>` or "respond in telegraphic mode". Then Opus applies the same rules.
 
 ---
 
 ## Changelog
 
+### v2.0.0 (2026-05-23)
+- **NEW**: Telegraphic Mode integrated explicitly (caveman technique, credit to Julius Brussee MIT).
+- **NEW**: Self-evaluation loop replicates `/goal` lockstep without CLI dependency.
+- **NEW**: 3-layer cost report breakdown.
+- Compatibility: native `/goal` and external caveman plugin still work alongside.
+
 ### v1.1.0 (2026-05-23)
-- **NEW Step 0**: persistent lessons-learned. Reads `<repo>/.claude/dev-cycle-lessons.md` at start, injects relevant lessons into Sonnet spec.
-- **NEW Step 6 enhancement**: every Sonnet mistake gets documented in lessons file.
-- **NEW Step 9**: final report includes token + cost breakdown vs all-Opus estimate.
-- Documentation bilingual (ES + EN in same file).
+- Persistent lessons-learned at `<repo>/.claude/dev-cycle-lessons.md`.
+- Final report with token + USD cost breakdown vs all-Opus estimate.
+- Bilingual ES + EN.
 
 ### v1.0.0 (2026-05-23)
-- Initial release: Opus-plan + Sonnet-execute + Opus-audit cycle.
+- Initial release.
