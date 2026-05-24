@@ -19,10 +19,5 @@
     "goal",
     "delegation"
   ],
-  "skills": [
-    {
-      "name": "dev-cycle",
-      "path": "./skills/dev-cycle/SKILL.md"
-    }
-  ]
+  "skills": "./skills/"
 }
